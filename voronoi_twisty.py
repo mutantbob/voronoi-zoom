@@ -2,6 +2,8 @@ import pyopencl as cl
 from math import *
 import numpy
 import random
+import colorsys
+import os
 
 def opencl_kernel():
     return """
@@ -33,11 +35,12 @@ float2 voronoi_calc(float2 xy, global float2 * cellCenters, int nCells)
 cellIdx = cellIdx + patternIdx*cellsPerPattern + layer*patternsPerLayer*cellsPerPattern
 xy = cellCenters[ cellIdx ]
 patternIdx = patternsForCell[ cellIdx ]
+strokeColors[ 3*layer +[0:2] ]
 */
 __kernel void voronoi_twisty(float x0, float y0, float dx, float dy,
                              int layerA,
-                             global float2 *cellCenters, global int *patternsForCell,
-                             int cellsPerPattern, int patternsPerLayer,
+                             global float2 *cellCenters, global int *patternsForCell, global uchar *strokeColors, global uchar *greys,
+                             int cellsPerPattern, int patternsPerLayer, int nLayers, float zoomPerLayer,
                              global uchar*rgb) {
     int u = get_global_id(0);
     int v = get_global_id(1);
@@ -49,31 +52,34 @@ __kernel void voronoi_twisty(float x0, float y0, float dx, float dy,
     x0 + dx * u / nCols,
     y0 + dy * v / nRows );
 
-    int base = cellsPerPattern*(0+patternsPerLayer*layerA);
-    float2 cell = voronoi_calc(xy, cellCenters+ base, cellsPerPattern);
+    int currPattern = 0;
+    uchar3 color = (uchar3)(0x80, 0x80, 0x80);
+    for (int q=0; q<6; q++) {
+        int l2 = (q+layerA)%nLayers;
+        int base = cellsPerPattern*(currPattern+patternsPerLayer*l2);
+        float2 cell = voronoi_calc(xy, cellCenters+ base, cellsPerPattern);
 
-    int chosenIdx = floor(cell.x);
-    int chosenPattern = patternsForCell[chosenIdx + base];
+        int chosenIdx = floor(cell.x);
+        int chosenPattern = patternsForCell[chosenIdx + base];
 
-    if (cell.y<0.1) {
-        rgb[idx*3] = 255;
-        rgb[idx*3+1] = 0;
-        rgb[idx*3+2] = 0;
-    } else {
-        float2 xy2 = 2*(xy - cellCenters[base+chosenIdx]);
-        base = cellsPerPattern*(chosenPattern + patternsPerLayer*(1+layerA));
-        float2 cell2 = voronoi_calc(xy2, cellCenters + base, cellsPerPattern);
-
-        if (cell2.y<0.1) {
-            rgb[idx*3] = 0;
-            rgb[idx*3+1] = 0;
-            rgb[idx*3+2] = 255;
-        } else {
-            rgb[idx*3] = 0;
-            rgb[idx*3+1] =  5*(uchar)chosenIdx;
-            rgb[idx*3+2] = 0;
+        if (cell.y<0.1) {
+            color = (uchar3)( strokeColors[l2*3],
+             strokeColors[l2*3+1],
+             strokeColors[l2*3+2] );
+            break;
         }
+        xy = zoomPerLayer*(xy - cellCenters[base+chosenIdx]);
+        currPattern = chosenPattern;
+        color = (uchar3)(
+            greys[l2*3],
+            greys[l2*3+1],
+            greys[l2*3+2] );
+        //color = (uchar3)(0, 5*(uchar)chosenIdx, 0);
     }
+
+    rgb[idx*3] = color.x;
+    rgb[idx*3+1] = color.y;
+    rgb[idx*3+2] = color.z;
 }
 """
 
@@ -90,28 +96,37 @@ class VoronoiTwisty:
         self.k_voronoi_twisty = self.prg.voronoi_twisty
         self.k_voronoi_twisty.set_scalar_arg_dtypes( [ numpy.float32, numpy.float32, numpy.float32,numpy.float32,
                                                      numpy.int32,
-                                                     None, None, numpy.int32, numpy.int32,
+                                                     None, None, None, None,
+                                                       numpy.int32, numpy.int32, numpy.int32, numpy.float32,
                                                      None])
 
-    def voronoi_twisty(self, x0, y0, dx, dy, layerA, centers, cellPatterns,
-                       cellsPerPattern, patternsPerLayer, layerCount, nCols, nRows):
+    def voronoi_twisty(self, x0, y0, dx, dy, layerA, centers, cellPatterns, strokeColors, greys,
+                       cellsPerPattern, patternsPerLayer, layerCount, zoomPerLayer, nCols, nRows):
 
         jj = cellsPerPattern * patternsPerLayer * layerCount
         centers_g = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, jj*4*2)
         patterns_g = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, jj*4)
         pixels_g = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, nRows*nCols*3)
+        strokeColors_g  = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, layerCount*3)
+        greys_g  = cl.Buffer(self.ctx, cl.mem_flags.READ_WRITE, layerCount*3)
 
         centers_ = numpy.asarray(centers, dtype=numpy.float32)
         future = cl.enqueue_copy(self.queue, centers_g, centers_)
         future.wait()
         future = cl.enqueue_copy(self.queue, patterns_g, numpy.asarray(cellPatterns, dtype=numpy.int32) )
-
-        future = self.k_voronoi_twisty(self.queue, [nCols, nRows], None,
-                             x0, y0, dx, dy, layerA,
-                                     centers_g, patterns_g, cellsPerPattern, patternsPerLayer, pixels_g)
+        future.wait()
+        future = cl.enqueue_copy(self.queue, strokeColors_g, numpy.asarray(strokeColors, dtype=numpy.int8) )
+        future.wait()
+        future = cl.enqueue_copy(self.queue, greys_g, numpy.asarray(greys, dtype=numpy.int8) )
         future.wait()
 
-        pixels = numpy.zeros([nRows, nCols, 3], dtype=numpy.int8)
+        future = self.k_voronoi_twisty(self.queue, [nCols, nRows], None,
+            x0, y0, dx, dy, layerA,
+            centers_g, patterns_g, strokeColors_g, greys_g,
+            cellsPerPattern, patternsPerLayer, layerCount, zoomPerLayer, pixels_g)
+        future.wait()
+
+        pixels = numpy.zeros([nRows, nCols, 3], dtype=numpy.uint8)
         future = cl.enqueue_copy(self.queue, pixels, pixels_g)
         future.wait()
 
@@ -119,7 +134,7 @@ class VoronoiTwisty:
 
 
 
-def generateCenters(diam, nPatterns):
+def generateCenters(rad, nPatterns):
 
     diam = 1+2*rad
     rval = []
@@ -174,22 +189,93 @@ def saveResultImage(fname, pixels):
     img.save(fname)
     print("wrote %s" % fname)
 
+class DiagramParameters:
+    def __init__(self, cellsPerPattern, patternsPerLayer, layerCount):
+        self.layerCount = layerCount
+        self.patternsPerLayer = patternsPerLayer
+        self.cellsPerPattern = cellsPerPattern
+
+
+def calculateGreys(vt, strokeColors, centers, cellPatterns, dp):
+    greys = [colorsys.hsv_to_rgb(i / dp.layerCount + 0.13, 0.7, 0.7) for i in range(dp.layerCount)]
+    greys = (numpy.asarray(greys, dtype=numpy.float32) * 255.8).astype(numpy.uint8)
+
+    for q in range(3):
+        greys2 = []
+        for lk in range(dp.layerCount):
+            rgb = vt.voronoi_twisty(-4, -4, 8, 8, lk, centers, cellPatterns, strokeColors, greys,
+                                    dp.cellsPerPattern, dp.patternsPerLayer, dp.layerCount, 2.8, 1024, 1024)
+
+            colorMean = numpy.mean(rgb, (0, 1))
+            greys2.extend(colorMean)
+            colorMean = colorMean/255
+            hls = colorsys.rgb_to_hsv(colorMean[0], colorMean[1], colorMean[2])
+
+            print("color mean[%d] %r\t%r" % (lk, hls, colorMean))
+        greys = greys2
+
+    return greys2
+
+
+def downsample(pixels, factor):
+    (w,h,q) = pixels.shape
+    newShape = [floor(h / factor), factor, floor(w / factor), factor, q]
+    print(newShape)
+    p2 = numpy.reshape(pixels.astype(numpy.float32), newShape, order="C")
+
+    rval = numpy.mean(p2, (1,3))
+
+    return rval.astype(numpy.uint8)
+
+
+def mission1() :
+    vt = VoronoiTwisty()
+
+    rad=3
+    diam=1+rad*2
+    cellsPerPattern = diam * diam
+    patternsPerLayer = 25
+    layerCount = 20
+
+    centers = generateCenters(rad, patternsPerLayer * layerCount)
+    cellPatterns = pickCellPatterns(rad, layerCount, patternsPerLayer)
+
+    dp = DiagramParameters(cellsPerPattern, patternsPerLayer, layerCount)
+
+    strokeColors = [ colorsys.hsv_to_rgb( i/layerCount, 1, 1) for i in range(layerCount)]
+    strokeColors = ( numpy.asarray(strokeColors, dtype=numpy.float32) * 255.8 ).astype(numpy.uint8)
+    greys = calculateGreys(vt, strokeColors, centers, cellPatterns, dp)
+
+    print(greys)
+
+    w = 4096
+
+    zoomPerLayer = 2.8
+    stepsPerLayer = 30
+    for lk in range(20):
+        for j in range(stepsPerLayer):
+            fr = lk*stepsPerLayer + j
+
+            fname = fileForFrame(fr)
+
+            if os.path.isfile(fname):
+                continue
+
+            r1 = 1/ ( zoomPerLayer ** (j/stepsPerLayer) )
+            rgb = vt.voronoi_twisty(-r1, -r1, r1*2, r1*2, lk, centers, cellPatterns, strokeColors, greys,
+                                cellsPerPattern, patternsPerLayer, layerCount, zoomPerLayer, w, w)
+
+            rgb = downsample(rgb, 4)
+
+            saveResultImage(fname, rgb)
+
+
+def fileForFrame(fr):
+    return "/var/tmp/blender/2019/voronoi_twisty/%04d.png" % fr
+
 
 #
 #
 #
 
-vt = VoronoiTwisty()
-
-rad=3
-diam=1+rad*2
-cellsPerPattern = diam * diam
-patternsPerLayer = 25
-layerCount = 20
-
-centers = generateCenters(rad, patternsPerLayer * layerCount)
-cellPatterns = pickCellPatterns(rad, layerCount, patternsPerLayer)
-
-rgb = vt.voronoi_twisty(-4,-4, 8, 8, 0, centers, cellPatterns, cellsPerPattern, patternsPerLayer, layerCount, 1024, 1024)
-
-saveResultImage("/tmp/x.png", rgb)
+mission1()
