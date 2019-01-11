@@ -20,7 +20,7 @@ float2 voronoi_calc(float2 xy, global float2 * cellCenters, int nCells)
         if (d2 < d1) {
             returnIdx = j;
             dist = fabs(d2-d1)*0.5;
-            chosenXY = cellCenters[j];
+            chosenXY = cellCenters[returnIdx];
         } else if (j==1) {
             dist = fabs(d2-d1)*0.5;
         }
@@ -52,16 +52,27 @@ __kernel void voronoi_twisty(float x0, float y0, float dx, float dy,
     int base = cellsPerPattern*(0+patternsPerLayer*layerA);
     float2 cell = voronoi_calc(xy, cellCenters+ base, cellsPerPattern);
 
-    float aa = cell.x;
+    int chosenIdx = floor(cell.x);
+    int chosenPattern = patternsForCell[chosenIdx + base];
 
     if (cell.y<0.1) {
         rgb[idx*3] = 255;
         rgb[idx*3+1] = 0;
         rgb[idx*3+2] = 0;
     } else {
-        rgb[idx*3] = 0;
-        rgb[idx*3+1] =  20*(uchar)floor(cell.x);
-        rgb[idx*3+2] = 0;
+        float2 xy2 = 2*(xy - cellCenters[base+chosenIdx]);
+        base = cellsPerPattern*(chosenPattern + patternsPerLayer*(1+layerA));
+        float2 cell2 = voronoi_calc(xy2, cellCenters + base, cellsPerPattern);
+
+        if (cell2.y<0.1) {
+            rgb[idx*3] = 0;
+            rgb[idx*3+1] = 0;
+            rgb[idx*3+2] = 255;
+        } else {
+            rgb[idx*3] = 0;
+            rgb[idx*3+1] =  5*(uchar)chosenIdx;
+            rgb[idx*3+2] = 0;
+        }
     }
 }
 """
