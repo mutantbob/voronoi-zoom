@@ -194,14 +194,14 @@ def pickCellPatterns(rad, layerCount, patternsPerLayer):
                 if i==center:
                     rval.append(0)
                 else:
-                    rval.append(random.randint(0, patternsPerLayer))
+                    rval.append(random.randint(0, patternsPerLayer-1))
 
     return rval
 
 
 def saveResultImage(fname, pixels):
     from PIL import Image
-    print ("image shape %r"%(pixels.shape,))
+    #print ("image shape %r"%(pixels.shape,))
     img = Image.fromarray(pixels, mode='RGB')
     # imsave("/tmp/x.png", pixels)
     img.save(fname)
@@ -229,7 +229,8 @@ def calculateGreys(vt, strokeColors, centers, cellPatterns, dp):
             colorMean = colorMean/255
             hls = colorsys.rgb_to_hsv(colorMean[0], colorMean[1], colorMean[2])
 
-            print("color mean[%d] %r\t%r" % (lk, hls, colorMean))
+            if (lk==5):
+                print("color mean[%d] %r\t%r" % (lk, hls, colorMean))
         greys = greys2
 
     return greys2
@@ -238,7 +239,7 @@ def calculateGreys(vt, strokeColors, centers, cellPatterns, dp):
 def downsample(pixels, factor):
     (w,h,q) = pixels.shape
     newShape = [floor(h / factor), factor, floor(w / factor), factor, q]
-    print(newShape)
+    #print(newShape)
     p2 = numpy.reshape(pixels.astype(numpy.float32), newShape, order="C")
 
     rval = numpy.mean(p2, (1,3))
