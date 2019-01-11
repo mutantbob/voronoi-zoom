@@ -72,7 +72,7 @@ __kernel void voronoi_twisty(float x0, float y0, float dx, float dy,
 
     int currPattern = 0;
     uchar3 color = (uchar3)(0x80, 0x80, 0x80);
-    for (int q=0; q<6; q++) {
+    for (int q=0; q<7; q++) {
         int l2 = (q+layerA)%nLayers;
         int base = cellsPerPattern*(currPattern+patternsPerLayer*l2);
         float2 cell = voronoi_calc(xy, cellCenters+ base, cellsPerPattern);
