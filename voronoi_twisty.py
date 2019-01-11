@@ -12,23 +12,41 @@ float2 voronoi_calc(float2 xy, global float2 * cellCenters, int nCells)
 {
     int returnIdx=0;
     float2 chosenXY = cellCenters[returnIdx];
-    float dist = INFINITY;
+    float dist = length(xy-chosenXY);
 
     for (int j=1; j<nCells; j++) {
-        float2 centerDelta = chosenXY - cellCenters[j];
-        float2 normCD = centerDelta/length(centerDelta);
-        float d1 = dot(chosenXY - xy, normCD);
-        float d2 = dot(xy - cellCenters[j] , normCD);
-        if (d2 < d1) {
-            returnIdx = j;
-            dist = fabs(d2-d1)*0.5;
-            chosenXY = cellCenters[returnIdx];
-        } else if (j==1) {
-            dist = fabs(d2-d1)*0.5;
+        float2 c2 = cellCenters[j];
+        float d9 = length(c2 - xy);
+
+        if (d9 < dist) {
+            chosenXY = c2;
+            dist = d9;
+            returnIdx=j;
         }
     }
 
-    return (float2)(returnIdx, dist);
+    float stroke = INFINITY;
+
+    for (int j=0; j<nCells; j++) {
+        if (j==returnIdx)
+            continue;
+
+        float2 c2 = cellCenters[j];
+
+        float2 centerDelta = chosenXY - c2;
+        float2 normCD = centerDelta/length(centerDelta);
+        float d1 = dot(chosenXY - xy, normCD);
+        float d2 = dot(xy - c2 , normCD);
+
+        float t2_ = (d2-d1)*0.5;
+        float t2 = fabs(t2_);
+
+        if (t2<stroke) {
+            stroke = t2;
+        }
+    }
+
+    return (float2)(returnIdx, stroke);
 }
 
 /*
@@ -62,7 +80,7 @@ __kernel void voronoi_twisty(float x0, float y0, float dx, float dy,
         int chosenIdx = floor(cell.x);
         int chosenPattern = patternsForCell[chosenIdx + base];
 
-        if (cell.y<0.1) {
+        if (cell.y<0.05) {
             color = (uchar3)( strokeColors[l2*3],
              strokeColors[l2*3+1],
              strokeColors[l2*3+2] );
