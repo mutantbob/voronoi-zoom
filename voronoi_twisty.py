@@ -300,4 +300,5 @@ def fileForFrame(fr):
 #
 #
 
+random.seed(4262)
 mission1()
