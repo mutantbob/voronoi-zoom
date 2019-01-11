@@ -237,7 +237,7 @@ def calculateGreys(vt, strokeColors, centers, cellPatterns, dp):
 
 
 def downsample(pixels, factor):
-    (w,h,q) = pixels.shape
+    (h,w,q) = pixels.shape
     newShape = [floor(h / factor), factor, floor(w / factor), factor, q]
     #print(newShape)
     p2 = numpy.reshape(pixels.astype(numpy.float32), newShape, order="C")
@@ -267,7 +267,9 @@ def mission1() :
 
     print(greys)
 
-    w = 4096
+    oversample = 4
+    w = 1920*oversample
+    h = 1080 * oversample
 
     zoomPerLayer = 2.8
     stepsPerLayer = 30
@@ -280,11 +282,12 @@ def mission1() :
             if os.path.isfile(fname):
                 continue
 
-            r1 = 1/ ( zoomPerLayer ** (j/stepsPerLayer) )
-            rgb = vt.voronoi_twisty(-r1, -r1, r1*2, r1*2, lk, centers, cellPatterns, strokeColors, greys,
-                                cellsPerPattern, patternsPerLayer, layerCount, zoomPerLayer, w, w)
+            dx = 1/ ( zoomPerLayer ** (j/stepsPerLayer) )
+            dy = h*dx/w
+            rgb = vt.voronoi_twisty(-dx, -dy, dx*2, dy*2, lk, centers, cellPatterns, strokeColors, greys,
+                                cellsPerPattern, patternsPerLayer, layerCount, zoomPerLayer, w, h)
 
-            rgb = downsample(rgb, 4)
+            rgb = downsample(rgb, oversample)
 
             saveResultImage(fname, rgb)
 
