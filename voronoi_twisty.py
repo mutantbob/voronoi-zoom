@@ -172,6 +172,48 @@ class VoronoiTwisty:
         return pixels
 
 
+class RotationsAnimator:
+
+    def __init__(self, diagramParams, framesPerLayer):
+        self.framesPerLayer = framesPerLayer
+        self.dp = diagramParams
+        n = self.dp.cellsPerPattern*self.dp.patternsPerLayer*self.dp.layerCount
+        self.velocities = [ self.randomVelocity() for i in range(n)]
+        self.baseline = [ random.random()*2*pi for i in range(n)]
+
+    def randomVelocity(self):
+        a = random.random() - 0.5
+        if (a<0):
+            a = a-0.5
+        else:
+            a = a+0.5
+        return 0.1 / 30 * 2 * (a)
+
+    def rotationForSlot(self, slot, frame):
+
+        currLayer = floor(frame / self.framesPerLayer)
+        slotLayer = floor(slot/(self.dp.patternsPerLayer*self.dp.layerCount))
+
+        layerCount = self.dp.layerCount
+        oppositeLayer = (slotLayer + floor(layerCount / 2)) % layerCount
+        frame0 = oppositeLayer * self.framesPerLayer
+        frame9 = (slotLayer+1)*self.framesPerLayer
+
+        delta = self.wrapFrame(frame, frame9)
+
+        return delta * self.velocities[slot] + self.baseline[slot]
+
+    def wrapFrame(self, frame, frame0):
+        if frame > frame0:
+            delta = frame0 - frame + self.framesPerLayer * self.dp.layerCount
+        else:
+            delta = frame0 - frame
+        return delta
+
+    def rotationsForFrame(self, fr):
+        return [ self.rotationForSlot(i, fr) for i in range(len(self.velocities))]
+        #return [ fr* v for v in self.velocities ]
+
 
 def generateCenters(rad, nPatterns):
 
@@ -279,13 +321,16 @@ def mission1() :
 
     centers = generateCenters(rad, patternsPerLayer * layerCount)
     cellPatterns = pickCellPatterns(rad, layerCount, patternsPerLayer)
-    rotations = [ (random.random()-0.5)*3 for i in range(cellsPerPattern * patternsPerLayer * layerCount)]
+    #rotations = [ (random.random()-0.5)*3 for i in range(cellsPerPattern * patternsPerLayer * layerCount)]
+
+    stepsPerLayer = 30
 
     dp = DiagramParameters(cellsPerPattern, patternsPerLayer, layerCount)
+    rotAnim = RotationsAnimator(dp, stepsPerLayer)
 
     strokeColors = [ colorsys.hsv_to_rgb( i/layerCount, 1, 1) for i in range(layerCount)]
     strokeColors = ( numpy.asarray(strokeColors, dtype=numpy.float32) * 255.8 ).astype(numpy.uint8)
-    greys = calculateGreys(vt, strokeColors, centers, cellPatterns, rotations, dp)
+    greys = calculateGreys(vt, strokeColors, centers, cellPatterns, rotAnim.rotationsForFrame(0), dp)
 
     print(greys)
 
@@ -294,10 +339,11 @@ def mission1() :
     h = 1080 * oversample
 
     zoomPerLayer = 2.8
-    stepsPerLayer = 30
     for lk in range(20):
         for j in range(stepsPerLayer):
             fr = lk*stepsPerLayer + j
+
+            rotations = rotAnim.rotationsForFrame(fr)
 
             fname = fileForFrame(fr)
 
@@ -318,9 +364,23 @@ def fileForFrame(fr):
     return "/var/tmp/blender/2019/voronoi_twisty/%04d.png" % fr
 
 
+def mission2():
+    """ test for my rotation calculation """
+    dp = DiagramParameters(49, 25, 20)
+    rotAnim = RotationsAnimator(dp, 30)
+
+    old =0
+    for fr in range(0, 600, 5):
+        rot = rotAnim.rotationForSlot(41, fr)
+        delta  =rot-old
+        print("%d\t%.5f\t%r" % (fr, rot, delta))
+
+        old=rot
+
 #
 #
 #
 
 random.seed(4262)
+#mission2()
 mission1()
