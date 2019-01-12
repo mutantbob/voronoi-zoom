@@ -101,7 +101,7 @@ __kernel void voronoi_twisty(float x0, float y0, float dx, float dy,
             break;
         }
         xy = zoomPerLayer*( xyr-cellCenters[base+chosenIdx] );
-        xy = rotated( xy, sincos[0], -sincos[1]);
+        xy = rotated( xy, -sincos[0], sincos[1]);
 
         color = (uchar3)(
             greys[l2*3],
