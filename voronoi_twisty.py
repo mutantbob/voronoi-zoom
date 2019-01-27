@@ -267,7 +267,16 @@ def saveResultImage(fname, pixels):
     #print ("image shape %r"%(pixels.shape,))
     img = Image.fromarray(pixels, mode='RGB')
     # imsave("/tmp/x.png", pixels)
-    img.save(fname)
+
+    tmp = fname+".new"
+    img.save(tmp, format="PNG")
+
+    import  os
+    import contextlib
+    with contextlib.suppress(FileNotFoundError):
+        os.remove(fname)
+    os.rename(tmp, fname)
+
     print("wrote %s" % fname)
 
 class DiagramParameters:
@@ -277,15 +286,15 @@ class DiagramParameters:
         self.cellsPerPattern = cellsPerPattern
 
 
-def calculateGreys(vt, strokeColors, centers, cellPatterns, rotations, dp):
+def calculateGreys(vt, strokeColors, centers, cellPatterns, rotations, dp, zoomPerLayer):
     greys = [colorsys.hsv_to_rgb(i / dp.layerCount + 0.13, 0.7, 0.7) for i in range(dp.layerCount)]
     greys = (numpy.asarray(greys, dtype=numpy.float32) * 255.8).astype(numpy.uint8)
 
     for q in range(3):
         greys2 = []
         for lk in range(dp.layerCount):
-            rgb = vt.voronoi_twisty(-4, -4, 8, 8, lk, centers, cellPatterns, rotations, strokeColors, greys,
-                                    dp.cellsPerPattern, dp.patternsPerLayer, dp.layerCount, 2.8, 1024, 1024)
+            rgb = vt.voronoi_twisty(-2, -2, 4, 4, lk, centers, cellPatterns, rotations, strokeColors, greys,
+                                    dp.cellsPerPattern, dp.patternsPerLayer, dp.layerCount, zoomPerLayer, 1024, 1024)
 
             colorMean = numpy.mean(rgb, (0, 1))
             greys2.extend(colorMean)
@@ -314,46 +323,69 @@ def mission1() :
     vt = VoronoiTwisty()
 
     rad=3
-    diam=1+rad*2
-    cellsPerPattern = diam * diam
-    patternsPerLayer = 25
-    layerCount = 20
+    cellsPerPattern = (1 + rad * 2) ** 2
 
-    centers = generateCenters(rad, patternsPerLayer * layerCount)
-    cellPatterns = pickCellPatterns(rad, layerCount, patternsPerLayer)
-    #rotations = [ (random.random()-0.5)*3 for i in range(cellsPerPattern * patternsPerLayer * layerCount)]
+    dp = DiagramParameters(cellsPerPattern, 25, 20)
 
-    stepsPerLayer = 30
+    renderAnimation(vt, dp, 60, 2.8, fileForFrame)
 
-    dp = DiagramParameters(cellsPerPattern, patternsPerLayer, layerCount)
+
+def mission3() :
+    vt = VoronoiTwisty()
+
+    rad=7
+    cellsPerPattern = (1 + rad * 2) ** 2
+
+    dp = DiagramParameters(cellsPerPattern, 25, 20)
+
+    renderAnimation(vt, dp, 120, 4.5,
+                    lambda fr: "/var/tmp/blender/2019/voronoi_twisty2/%04d.png"%fr)
+
+
+def mission4() :
+    vt = VoronoiTwisty()
+
+    rad=6
+    cellsPerPattern = (1 + rad * 2) ** 2
+
+    dp = DiagramParameters(cellsPerPattern, 25, 20)
+
+    renderAnimation(vt, dp, 90, 3.5,
+                    lambda fr: "/var/tmp/blender/2019/voronoi_twisty3/%04d.png"%fr)
+
+
+def renderAnimation(vt, dp, stepsPerLayer, zoomPerLayer, filenameGenerator):
+
+    rad = floor( sqrt(dp.cellsPerPattern) / 2)
+
+    centers = generateCenters(rad, dp.patternsPerLayer * dp.layerCount)
+    cellPatterns = pickCellPatterns(rad, dp.layerCount, dp.patternsPerLayer)
     rotAnim = RotationsAnimator(dp, stepsPerLayer)
 
-    strokeColors = [ colorsys.hsv_to_rgb( i/layerCount, 1, 1) for i in range(layerCount)]
-    strokeColors = ( numpy.asarray(strokeColors, dtype=numpy.float32) * 255.8 ).astype(numpy.uint8)
-    greys = calculateGreys(vt, strokeColors, centers, cellPatterns, rotAnim.rotationsForFrame(0), dp)
-
+    strokeColors = [colorsys.hsv_to_rgb(i / dp.layerCount, 1, 1) for i in range(dp.layerCount)]
+    strokeColors = (numpy.asarray(strokeColors, dtype=numpy.float32) * 255.8).astype(numpy.uint8)
+    greys = calculateGreys(vt, strokeColors, centers, cellPatterns, rotAnim.rotationsForFrame(0), dp, zoomPerLayer)
     print(greys)
 
     oversample = 4
-    w = 1920*oversample
+    w = 1920 * oversample
     h = 1080 * oversample
 
-    zoomPerLayer = 2.8
-    for lk in range(20):
-        for j in range(stepsPerLayer):
-            fr = lk*stepsPerLayer + j
+    for lk in range(dp.layerCount):
+        for j in range(0, stepsPerLayer, 1):
+            fr = lk * stepsPerLayer + j
 
-            rotations = rotAnim.rotationsForFrame(fr)
-
-            fname = fileForFrame(fr)
+            fname = filenameGenerator(fr)
 
             if os.path.isfile(fname):
                 continue
 
-            dx = 1/ ( zoomPerLayer ** (j/stepsPerLayer) )
-            dy = h*dx/w
-            rgb = vt.voronoi_twisty(-dx, -dy, dx*2, dy*2, lk, centers, cellPatterns, rotations, strokeColors, greys,
-                                cellsPerPattern, patternsPerLayer, layerCount, zoomPerLayer, w, h)
+            rotations = rotAnim.rotationsForFrame(fr)
+
+            dx = 1 / (zoomPerLayer ** (j / stepsPerLayer))
+            dy = h * dx / w
+            rgb = vt.voronoi_twisty(-dx, -dy, dx * 2, dy * 2, lk, centers, cellPatterns, rotations, strokeColors, greys,
+                                    dp.cellsPerPattern, dp.patternsPerLayer, dp.layerCount, zoomPerLayer, w, h)
 
             rgb = downsample(rgb, oversample)
 
@@ -383,4 +415,7 @@ def mission2():
 
 random.seed(4262)
 #mission2()
-mission1()
+
+#mission1()
+#mission3()
+mission4()
