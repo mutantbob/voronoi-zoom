@@ -192,13 +192,18 @@ class RotationsAnimator:
     def rotationForSlot(self, slot, frame):
 
         currLayer = floor(frame / self.framesPerLayer)
-        slotLayer = floor(slot/(self.dp.patternsPerLayer*self.dp.layerCount))
+        slotLayer = floor(slot/(self.dp.patternsPerLayer
+                                 *self.dp.cellsPerPattern
+                                #*self.dp.layerCount
+                                ))
 
         layerCount = self.dp.layerCount
         oppositeLayer = (slotLayer + floor(layerCount / 2)) % layerCount
         frame0 = oppositeLayer * self.framesPerLayer
         frame9 = (slotLayer+1)*self.framesPerLayer
 
+        if False and (slotLayer>10):
+            print ("frame %d\t slot end %d\t"%(frame, frame9))
         delta = self.wrapFrame(frame, frame9)
 
         return delta * self.velocities[slot] + self.baseline[slot]
